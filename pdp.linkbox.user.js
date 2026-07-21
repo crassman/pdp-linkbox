@@ -6,8 +6,8 @@
 // @author      christian.rassmann@otto.de
 // @match       https://*.otto.de/p/*
 // @grant       GM.xmlHttpRequest
-// @downloadURL https://github.com/crassman/pdp-linkbox/main/pdp.linkbox.user.js
-// @updateURL   https://github.com/crassman/pdp-linkbox/main/pdp.linkbox.user.js
+// @downloadURL https://raw.githubusercontent.com/crassman/pdp-linkbox/main/pdp.linkbox.user.js
+// @updateURL   https://raw.githubusercontent.com/crassman/pdp-linkbox/main/pdp.linkbox.user.js
 // @require     https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js
 // @connect     variation-api.live.opal.cloud.otto.de
 // @connect     *.opal.cloud.otto.de
