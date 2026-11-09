@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        pdp.linkbox
 // @namespace   https://*.otto.de/
-// @version     6.3
+// @version     6.4
 // @description Adds a Linkbox to otto.de PDP
 // @author      christian.rassmann@otto.de
 // @match       https://*.otto.de/p/*
@@ -19,13 +19,20 @@
 
     // ─── Konstanten ───────────────────────────────────────────────────────────
 
-    const VERSION          = '6.3';
+    const VERSION          = '6.4';
     const POLLING_INTERVAL = 1000;
     const VAR_API_BASE     = 'https://variation-api.live.opal.cloud.otto.de/opal-variation-api/variations';
     const LOG_PREFIX       = '[Linkbox]';
 
     // Attribut-Name, der den aktuellen Render-Zustand der Box speichert
     const LINKBOX_STATE_ATTR = 'data-linkbox-state';
+
+    // Erklärtexte für die Saleability-Badges (Tooltip am (i))
+    const SALEABILITY_INFO = {
+        saleable:     'Variation ist sowohl discoverable als auch purchasable.',
+        discoverable: 'OnlineRelevance=ACTIVE, keine displayRestrictions und entweder nicht Teil eines Offers oder offering.onlineRelevance=ACTIVE.',
+        purchasable:  'OnlineRelevance=ACTIVE und availability.state ist nicht SOLDOUT.',
+    };
 
     // ─── State ────────────────────────────────────────────────────────────────
 
@@ -200,6 +207,12 @@
             offerStrategy:      obj.offering?.strategy                                || null,
             offerCount:         obj.offering?.count                                   ?? null,
             useContent:         obj.offering?.useContent                              ?? null,
+            discoverable:       obj.status?.saleability?.discoverable                 ?? null,
+            purchasable:        obj.status?.saleability?.purchasable                  ?? null,
+            saleable:           obj.status?.saleability?.saleable                     ?? null,
+            saleabilityUpdated: obj.status?.saleability?.updated
+                                    ? formatDate(obj.status.saleability.updated)
+                                    : '',
         };
     }
 
@@ -226,6 +239,7 @@
             assortmentCode = '', assortmentType = '',
             lastModified = '',
             offerId = null, offerStrategy = null, offerCount = null, useContent = null,
+            discoverable = null, purchasable = null, saleable = null, saleabilityUpdated = '',
         } = varData;
 
         const effectiveProductId   = productId || params.contentProductId || '';
@@ -249,6 +263,37 @@
             ready:   '',
             minimal: '',
         }[state] ?? '';
+
+        // ── Saleability-Block ─────────────────────────────────────────────────
+        const saleabilityBadge = (label, value, big = false) => {
+            const style = value === true
+                ? { bg: '#E8F5E9', fg: '#2E7D32', icon: '✓' }
+                : value === false
+                    ? { bg: '#FDECEA', fg: '#C62828', icon: '✗' }
+                    : { bg: '#F0F0F0', fg: '#666',    icon: '?' };
+            return `
+                <span style="
+                    display:inline-block;margin:2px 4px 2px 0;padding:${big ? '3px 8px' : '2px 6px'};
+                    border-radius:10px;background:${style.bg};color:${style.fg};
+                    font-size:${big ? '1em' : '0.9em'};font-weight:${big ? 'bold' : 'normal'};
+                    white-space:nowrap;
+                ">${style.icon} ${label}
+                    <span title="${SALEABILITY_INFO[label]}"
+                          style="cursor:help;margin-left:3px;opacity:0.7;font-weight:normal;">ⓘ</span>
+                </span>`;
+        };
+
+        const hasSaleability  = [saleable, discoverable, purchasable].some(v => v !== null);
+        const saleabilityBlock = hasSaleability ? `
+            <div>
+                <span style="margin-right:4px;">Saleability:</span>
+                ${saleabilityBadge('saleable', saleable, true)}<br>
+                ${saleabilityBadge('discoverable', discoverable)}
+                ${saleabilityBadge('purchasable', purchasable)}<br>
+                <small style="color:#888;">updated: ${saleabilityUpdated || '–'}</small>
+            </div>
+            <hr style="margin:8px 0;border:none;border-top:1px solid #E6E6E6;">
+        ` : '';
 
         // ── Complaint-Tool-Block ──────────────────────────────────────────────
         const complaintBlock = decodedComplaintUrl ? `
@@ -325,6 +370,7 @@
                         color:#888;padding:0 2px;line-height:1;
                     " title="Schließen">✕</button>
                 </div>
+                ${saleabilityBlock}
                 ${complaintBlock}
                 ${statusBanner}
                 ${variationBlock}
