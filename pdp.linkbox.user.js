@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        pdp.linkbox
 // @namespace   https://*.otto.de/
-// @version     6.4
+// @version     6.5
 // @description Adds a Linkbox to otto.de PDP
 // @author      christian.rassmann@otto.de
 // @match       https://*.otto.de/p/*
@@ -19,7 +19,7 @@
 
     // ─── Konstanten ───────────────────────────────────────────────────────────
 
-    const VERSION          = '6.4';
+    const VERSION          = '6.5';
     const POLLING_INTERVAL = 1000;
     const VAR_API_BASE     = 'https://variation-api.live.opal.cloud.otto.de/opal-variation-api/variations';
     const LOG_PREFIX       = '[Linkbox]';
@@ -33,6 +33,61 @@
         discoverable: 'OnlineRelevance=ACTIVE, keine displayRestrictions und entweder nicht Teil eines Offers oder offering.onlineRelevance=ACTIVE.',
         purchasable:  'OnlineRelevance=ACTIVE und availability.state ist nicht SOLDOUT.',
     };
+
+    // ─── Saleability-Ursachen ─────────────────────────────────────────────────
+
+    /**
+     * Leitet aus den Rohdaten der Variation-API ab, WARUM discoverable bzw.
+     * purchasable false sein könnten (Regeln laut API-Doku). Die Flags selbst
+     * kommen weiterhin aus status.saleability – hier wird nur erklärt.
+     *
+     * @returns {{ discoverable: string[], purchasable: string[] }}
+     */
+    function explainSaleability(obj) {
+        const onlineRelevance = obj.status?.onlineRelevance?.value ?? null;
+        const restrictions    = Array.isArray(obj.status?.displayRestriction) ? obj.status.displayRestriction : [];
+        const hasOffer        = !!obj.offering;
+        const offerRelevance  = obj.offering?.onlineRelevance?.value ?? obj.offering?.onlineRelevance ?? null;
+        const availability    = obj.availability || {};
+
+        const reasons = { discoverable: [], purchasable: [] };
+
+        if (onlineRelevance !== 'ACTIVE') {
+            const r = `status.onlineRelevance = ${onlineRelevance ?? '–'}`;
+            reasons.discoverable.push(r);
+            reasons.purchasable.push(r);
+        }
+        if (restrictions.length) {
+            const values = restrictions.map(x => (typeof x === 'string' ? x : (x?.value ?? x?.type ?? JSON.stringify(x))));
+            // displayRestriction (EXCLUDENAVIGATION|EXCLUDESEARCH) entsteht durch eine Permission
+            // mit state=RESTRICTED: SICHTBARKEITSEINSCHRAENKUNG oder ANGEBOTSSEINSCHRAENKUNG
+            // (außer code=AUF_WETTBEWERB_BLOCKLIST)
+            reasons.discoverable.push(
+                `status.displayRestriction = ${values.join(', ')} ` +
+                `(Permission RESTRICTED: Sichtbarkeits- oder Angebotseinschränkung)`
+            );
+        }
+        if (hasOffer && offerRelevance !== 'ACTIVE') {
+            reasons.discoverable.push(`offering.onlineRelevance = ${offerRelevance ?? '–'}`);
+        }
+        if (availability.state === 'SOLDOUT') {
+            const extra = [
+                availability.stock != null ? `stock: ${availability.stock}` : null,
+                availability.updated ? `seit ${formatDate(availability.updated)}` : null,
+            ].filter(Boolean).join(', ');
+            reasons.purchasable.push(`availability.state = SOLDOUT${extra ? ` (${extra})` : ''}`);
+        }
+        return reasons;
+    }
+
+    /**
+     * Escaped HTML-Sonderzeichen für API-Werte, die ins Markup gehen.
+     */
+    function escapeHtml(str) {
+        return String(str).replace(/[&<>"']/g, c => (
+            { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+    }
 
     // ─── State ────────────────────────────────────────────────────────────────
 
@@ -213,6 +268,7 @@
             saleabilityUpdated: obj.status?.saleability?.updated
                                     ? formatDate(obj.status.saleability.updated)
                                     : '',
+            saleabilityReasons: explainSaleability(obj),
         };
     }
 
@@ -240,6 +296,7 @@
             lastModified = '',
             offerId = null, offerStrategy = null, offerCount = null, useContent = null,
             discoverable = null, purchasable = null, saleable = null, saleabilityUpdated = '',
+            saleabilityReasons = { discoverable: [], purchasable: [] },
         } = varData;
 
         const effectiveProductId   = productId || params.contentProductId || '';
@@ -265,31 +322,54 @@
         }[state] ?? '';
 
         // ── Saleability-Block ─────────────────────────────────────────────────
-        const saleabilityBadge = (label, value, big = false) => {
-            const style = value === true
+        const infoIcon = (key) => `
+            <span title="${SALEABILITY_INFO[key]}"
+                  style="cursor:help;margin-left:3px;opacity:0.7;font-weight:normal;">ⓘ</span>`;
+
+        const saleableBadge = (() => {
+            const style = saleable === true
                 ? { bg: '#E8F5E9', fg: '#2E7D32', icon: '✓' }
-                : value === false
+                : saleable === false
                     ? { bg: '#FDECEA', fg: '#C62828', icon: '✗' }
                     : { bg: '#F0F0F0', fg: '#666',    icon: '?' };
             return `
                 <span style="
-                    display:inline-block;margin:2px 4px 2px 0;padding:${big ? '3px 8px' : '2px 6px'};
+                    display:inline-block;margin:2px 4px 2px 0;padding:3px 8px;
                     border-radius:10px;background:${style.bg};color:${style.fg};
-                    font-size:${big ? '1em' : '0.9em'};font-weight:${big ? 'bold' : 'normal'};
-                    white-space:nowrap;
-                ">${style.icon} ${label}
-                    <span title="${SALEABILITY_INFO[label]}"
-                          style="cursor:help;margin-left:3px;opacity:0.7;font-weight:normal;">ⓘ</span>
-                </span>`;
-        };
+                    font-weight:bold;white-space:nowrap;
+                ">${style.icon} saleable${infoIcon('saleable')}</span>`;
+        })();
 
-        const hasSaleability  = [saleable, discoverable, purchasable].some(v => v !== null);
-        const saleabilityBlock = hasSaleability ? `
+        const NOT_DERIVABLE = 'Ursache nicht ableitbar – ggf. Daten noch nicht synchron';
+        const reasonList = (reasons) => (reasons.length ? reasons : [NOT_DERIVABLE])
+            .map(r => `<div style="margin-left:14px;color:#555;">└ ${escapeHtml(r)}</div>`)
+            .join('');
+
+        // Ursachenbaum nur bei saleable=false; es werden nur die false-Zweige gezeigt
+        let saleabilityTree = '';
+        if (saleable === false) {
+            const branches = [];
+            if (discoverable === false) {
+                branches.push(`
+                    <div style="color:#C62828;">└ ✗ nicht discoverable${infoIcon('discoverable')}</div>
+                    ${reasonList(saleabilityReasons.discoverable)}`);
+            }
+            if (purchasable === false) {
+                branches.push(`
+                    <div style="color:#C62828;">└ ✗ nicht purchasable${infoIcon('purchasable')}</div>
+                    ${reasonList(saleabilityReasons.purchasable)}`);
+            }
+            saleabilityTree = `
+                <div style="margin:2px 0 2px 10px;font-size:0.9em;">
+                    ${branches.length ? branches.join('') : reasonList([])}
+                </div>`;
+        }
+
+        const saleabilityBlock = saleable !== null ? `
             <div>
                 <span style="margin-right:4px;">Saleability:</span>
-                ${saleabilityBadge('saleable', saleable, true)}<br>
-                ${saleabilityBadge('discoverable', discoverable)}
-                ${saleabilityBadge('purchasable', purchasable)}<br>
+                ${saleableBadge}
+                ${saleabilityTree}
                 <small style="color:#888;">updated: ${saleabilityUpdated || '–'}</small>
             </div>
             <hr style="margin:8px 0;border:none;border-top:1px solid #E6E6E6;">
