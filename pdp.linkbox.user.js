@@ -370,7 +370,7 @@
                 <span style="margin-right:4px;">Saleability:</span>
                 ${saleableBadge}
                 ${saleabilityTree}
-                <small style="color:#888;">updated: ${saleabilityUpdated || '–'}</small>
+                </br><small style="color:#888;">updated: ${saleabilityUpdated || '–'}</small>
             </div>
             <hr style="margin:8px 0;border:none;border-top:1px solid #E6E6E6;">
         ` : '';
