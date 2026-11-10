@@ -46,6 +46,8 @@ Hinweis für bestehende Nutzer: Wenn du bereits eine ältere Version der Linkbox
 
 Ganz oben in der Linkbox zeigt ein Badge, ob die Variation aktuell **saleable** ist, also für OTTO-Kunden sowohl auffindbar (discoverable) als auch kaufbar (purchasable). Die Werte stammen aus `status.saleability` der Variation-API, darunter steht der Zeitpunkt der letzten Änderung (`updated`).
 
+Bei einem **Offer** wird der Block nur angezeigt, wenn die URL eine `variationId` enthält (wird beim Klick auf eine Variante gesetzt). Ohne `variationId` ist unklar, für welche Variante die Saleability gelten würde, daher entfällt der Block. Alle anderen Angaben der Linkbox bleiben sichtbar.
+
 * **✓ saleable** (grün): Alles in Ordnung, es werden keine weiteren Details angezeigt.
 * **✗ saleable** (rot): Darunter erscheint ein Ursachenbaum mit den Teilen, die nicht erfüllt sind.
 

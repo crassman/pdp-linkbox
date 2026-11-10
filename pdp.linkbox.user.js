@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name        pdp.linkbox
 // @namespace   https://*.otto.de/
-// @version     6.5
+// @version     6.6
 // @description Adds a Linkbox to otto.de PDP
 // @author      christian.rassmann@otto.de
 // @match       https://*.otto.de/p/*
@@ -19,7 +19,7 @@
 
     // ─── Konstanten ───────────────────────────────────────────────────────────
 
-    const VERSION          = '6.5';
+    const VERSION          = '6.6';
     const POLLING_INTERVAL = 1000;
     const VAR_API_BASE     = 'https://variation-api.live.opal.cloud.otto.de/opal-variation-api/variations';
     const LOG_PREFIX       = '[Linkbox]';
@@ -365,7 +365,12 @@
                 </div>`;
         }
 
-        const saleabilityBlock = saleable !== null ? `
+        // Bei Offers ist ohne variationId in der URL unklar, für welche Variante
+        // die Saleability gilt → Block nur mit explizit gewählter Variante zeigen.
+        const hasVariationIdInUrl = !!extractVariationIdFromUrl(window.location.href);
+        const showSaleability     = saleable !== null && (!offerId || hasVariationIdInUrl);
+
+        const saleabilityBlock = showSaleability ? `
             <div>
                 <span style="margin-right:4px;">Saleability:</span>
                 ${saleableBadge}
